@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الدخول - نظام النتائج</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --bg-dark: #121417;
+            --bg-light: #1c1f24;
+            --primary: #d4af37;
+        }
+        body {
+            background-color: var(--bg-dark);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: background-color 0.6s ease;
+            overflow-x: hidden;
+            color: #fff;
+        }
+        body.active {
+            background-color: var(--bg-light);
+        }
+        body.active::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 100vw;
+            height: 100vh;
+            transform: translate(-50%, -50%);
+            background: radial-gradient(circle at 75% 50%, rgba(246, 211, 101, 0.08), transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 60px;
+            z-index: 1;
+            width: 90%;
+            max-width: 900px;
+        }
+
+        /* ----- قسم الأباجورة ----- */
+        .lamp-section {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            padding-top: 20px;
+        }
+        .click-text {
+            font-size: 22px;
+            color: #555;
+            margin-bottom: 15px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            transition: color 0.4s, text-shadow 0.4s;
+        }
+        body.active .click-text {
+            color: #f6d365;
+            text-shadow: 0 0 15px rgba(246, 211, 101, 0.6);
+        }
+        .lamp {
+            position: relative;
+            width: 140px;
+            height: 280px;
+        }
+        .lamp-shade {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 140px;
+            height: 70px;
+            background: #e0e0e0;
+            border-radius: 70px 70px 0 0;
+            z-index: 2;
+            transition: background 0.3s, box-shadow 0.3s;
+        }
+        body.active .lamp-shade {
+            background: #fff9e6;
+            box-shadow: 0 -5px 25px rgba(255, 249, 230, 0.6);
+        }
+        .lamp-stand {
+            position: absolute;
+            bottom: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 14px;
+            height: 200px;
+            background: #666;
+            border-radius: 7px;
+        }
+        .lamp-base {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90px;
+            height: 15px;
+            background: #555;
+            border-radius: 10px 10px 0 0;
+        }
+        .pull-string {
+            position: absolute;
+            top: 90px;
+            left: 75%;
+            width: 2px;
+            height: 60px;
+            background: #999;
+            transform-origin: top;
+            transition: height 0.2s;
+            z-index: 3;
+        }
+        .pull-string::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: -4px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--primary);
+        }
+        .lamp-section:active .pull-string {
+            height: 85px;
+        }
+        .light-beam {
+            position: absolute;
+            top: 90px;
+            left: -55px;
+            width: 250px;
+            height: 350px;
+            background: linear-gradient(to bottom, rgba(255, 249, 230, 0.4) 0%, transparent 100%);
+            clip-path: polygon(28% 0, 72% 0, 100% 100%, 0 100%);
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            z-index: 1;
+            pointer-events: none;
+        }
+        body.active .light-beam {
+            opacity: 1;
+        }
+
+        /* ----- قسم الفورم (الزجاجي) ----- */
+        .form-section {
+            flex: 1;
+            opacity: 0;
+            transform: translateY(30px) scale(0.95);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+            pointer-events: none;
+            max-width: 450px;
+        }
+        body.active .form-section {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+        
+        .glass-card {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
+            text-align: center;
+        }
+        .glass-card h2 {
+            margin-top: 0;
+            margin-bottom: 30px;
+            font-weight: 500;
+            font-size: 26px;
+            color: #fff;
+        }
+        .input-group {
+            margin-bottom: 25px;
+            text-align: right;
+        }
+        .input-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        .input-group input {
+            width: 100%;
+            padding: 16px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            color: #fff;
+            font-size: 18px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            outline: none;
+            transition: border-color 0.3s;
+            text-align: center;
+            box-sizing: border-box;
+        }
+        .input-group input:focus {
+            border-color: var(--primary);
+        }
+        button.submit-btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, #d4af37, #f6d365);
+            border: none;
+            border-radius: 10px;
+            color: #121417;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        button.submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(212, 175, 55, 0.4);
+        }
+
+        /* ----- قسم النتائج ----- */
+        .result-container {
+            margin-top: 30px;
+            text-align: right;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        .result-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px dashed rgba(255,255,255,0.1);
+        }
+        .result-row:last-child { border-bottom: none; }
+        .label { color: #aaa; font-size: 15px;}
+        .value { color: #fff; font-weight: bold; font-size: 15px;}
+        .status-pass { color: #2ecc71; text-shadow: 0 0 8px rgba(46, 204, 113, 0.4);}
+        .status-fail { color: #e74c3c; text-shadow: 0 0 8px rgba(231, 76, 60, 0.4);}
+        .error-msg {
+            margin-top: 20px;
+            color: #ff7675;
+            background: rgba(255, 118, 117, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 15px;
+        }
+
+        @media (max-width: 768px) {
+            .wrapper { flex-direction: column; gap: 40px; padding: 20px; }
+            .lamp-section { transform: scale(0.85); padding-top: 0; }
+            .form-section { max-width: 100%; }
+        }
+    </style>
+</head>
+<body id="body">
+    
+    <div class="wrapper">
+        <div class="lamp-section" onclick="toggleLight()">
+            <div class="click-text">اضغط</div>
+            <div class="lamp">
+                <div class="lamp-shade"></div>
+                <div class="light-beam"></div>
+                <div class="pull-string"></div>
+                <div class="lamp-stand"></div>
+                <div class="lamp-base"></div>
+            </div>
+        </div>
+        
+        <div class="form-section">
+            <div class="glass-card">
+                <h2>Welcome</h2>
+                <form id="resultForm" onsubmit="searchStudent(event)">
+                    <div class="input-group">
+                        <label>كود الطالب السري</label>
+                        <input type="text" id="codeInput" placeholder="أدخل الكود" maxlength="10" required autocomplete="off">
+                    </div>
+                    <button type="submit" class="submit-btn">Sign In</button>
+                </form>
+                
+                <div id="resultArea"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let studentsData = [];
+
+        // تحميل ملف الإكسيل وقراءته تلقائياً عند فتح الصفحة
+        async function loadExcelData() {
+            try {
+                let response = await fetch('درجات_الطلاب_مع_الأكواد.xlsx');
+                let data = await response.arrayBuffer();
+                let workbook = XLSX.read(data, {type: 'array'});
+                let firstSheet = workbook.SheetNames[0];
+                let jsonSheet = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+                
+                // معالجة البيانات وتجهيزها للبحث بمرونة تامة
+                studentsData = jsonSheet.map(row => {
+                    let newRow = {};
+                    for (let key in row) {
+                        let cleanKey = key.trim();
+                        newRow[cleanKey] = row[key];
+                    }
+                    
+                    // استخراج عمود الكود بذكاء
+                    let codeKey = Object.keys(newRow).find(k => k.includes('كود') || k.toLowerCase().includes('code'));
+                    let nameKey = Object.keys(newRow).find(k => k.includes('الطالب') || k.includes('الاسم'));
+                    let gradeKey = Object.keys(newRow).find(k => k.includes('الصف'));
+                    let statusKey = Object.keys(newRow).find(k => k.includes('التقدير'));
+                    
+                    let scoreVal = '0', totalVal = '0', percentageVal = '0%';
+                    for (let k in newRow) {
+                        if (k.includes('درجة')) scoreVal = newRow[k];
+                        if (k.includes('مجموع')) totalVal = newRow[k];
+                        if (k.includes('نسبة')) percentageVal = String(newRow[k]).includes('%') ? newRow[k] : newRow[k] + '%';
+                    }
+
+                    return {
+                        code: codeKey ? String(newRow[codeKey]).trim().toUpperCase() : '',
+                        name: nameKey ? newRow[nameKey] : 'غير محدد',
+                        grade: gradeKey ? newRow[gradeKey] : 'غير محدد',
+                        score: scoreVal,
+                        total: totalVal,
+                        percentage: percentageVal,
+                        status: statusKey ? newRow[statusKey] : ''
+                    };
+                });
+            } catch (err) {
+                console.error("خطأ في تحميل ملف الإكسيل:", err);
+            }
+        }
+
+        // تشغيل التحميل عند فتح الصفحة
+        loadExcelData();
+
+        // تشغيل وإغلاق الإضاءة
+        function toggleLight() {
+            document.getElementById('body').classList.toggle('active');
+        }
+
+        // دالة البحث
+        function searchStudent(event) {
+            event.preventDefault();
+            const inputCode = document.getElementById('codeInput').value.trim().toUpperCase();
+            const resultArea = document.getElementById('resultArea');
+            
+            document.getElementById('body').classList.add('active');
+
+            if (studentsData.length === 0) {
+                resultArea.innerHTML = `<div class="error-msg">جاري تحميل البيانات أو الملف غير موجود... حاول مرة أخرى بعد قليل.</div>`;
+                return;
+            }
+
+            const student = studentsData.find(s => s.code === inputCode);
+
+            if (student) {
+                const isPass = student.status.includes('ناجح');
+                const statusClass = isPass ? 'status-pass' : 'status-fail';
+                resultArea.innerHTML = `
+                    <div class="result-container">
+                        <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
+                        <div class="result-row"><span class="label">الصف:</span> <span class="value">${student.grade}</span></div>
+                        <div class="result-row"><span class="label">درجة القرآن:</span> <span class="value">${student.score} / ${student.total}</span></div>
+                        <div class="result-row"><span class="label">النسبة المئوية:</span> <span class="value">${student.percentage}</span></div>
+                        ${student.status ? `<div class="result-row"><span class="label">التقدير:</span> <span class="value ${statusClass}">${student.status}</span></div>` : ''}
+                    </div>
+                `;
+            } else {
+                resultArea.innerHTML = `<div class="error-msg">عذراً، الكود الذي أدخلته غير صحيح!</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
