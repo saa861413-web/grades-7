@@ -24,6 +24,23 @@
             color: #fff;
         }
 
+        /* الحالة الافتراضية (خانة الكود فارغة) - إضاءة بيضاء */
+        body.white-state {
+            background-color: #1c1f24;
+        }
+        body.white-state .lamp-shade {
+            background: #fff9e6;
+            box-shadow: 0 -5px 25px rgba(255, 249, 230, 0.6);
+        }
+        body.white-state .light-beam {
+            opacity: 1;
+            background: linear-gradient(to bottom, rgba(255, 249, 230, 0.4) 0%, transparent 100%);
+        }
+        body.white-state .click-text {
+            color: #f6d365;
+            text-shadow: 0 0 15px rgba(246, 211, 101, 0.6);
+        }
+
         /* حالة النجاح - أخضر */
         body.success-state {
             background-color: #152219;
@@ -265,7 +282,7 @@
         }
     </style>
 </head>
-<body id="body">
+<body id="body" class="white-state">
     
     <div class="wrapper">
         <div class="lamp-section" onclick="toggleManualLight()">
@@ -341,26 +358,35 @@
 
         loadExcelData();
 
+        // مراقبة خانة الكود: إذا أصبحت فارغة تعود الأباجورة للون الأبيض تلقائياً
+        const codeInput = document.getElementById('codeInput');
+        const bodyEl = document.getElementById('body');
+
+        codeInput.addEventListener('input', function() {
+            if (this.value.trim() === '') {
+                bodyEl.classList.remove('success-state', 'fail-state');
+                bodyEl.classList.add('white-state');
+                document.getElementById('resultArea').innerHTML = '';
+            }
+        });
+
         function toggleManualLight() {
-            const body = document.getElementById('body');
-            if (!body.classList.contains('success-state') && !body.classList.contains('fail-state')) {
-                body.classList.toggle('success-state');
-            } else {
-                body.classList.remove('success-state', 'fail-state');
+            if (codeInput.value.trim() === '') {
+                bodyEl.classList.toggle('white-state');
             }
         }
 
         function searchStudent(event) {
             event.preventDefault();
-            const inputCode = document.getElementById('codeInput').value.trim().toUpperCase();
+            const inputCode = codeInput.value.trim().toUpperCase();
             const resultArea = document.getElementById('resultArea');
-            const bodyEl = document.getElementById('body');
             
-            // إعادة ضبط الإضاءة قبل البحث الجديد
-            bodyEl.classList.remove('success-state', 'fail-state');
+            // إزالة كل الحالات القديمة
+            bodyEl.classList.remove('success-state', 'fail-state', 'white-state');
 
             if (studentsData.length === 0) {
                 resultArea.innerHTML = `<div class="error-msg">جاري تحميل البيانات... حاول مرة أخرى بعد قليل.</div>`;
+                bodyEl.classList.add('white-state');
                 return;
             }
 
@@ -369,14 +395,13 @@
             if (student) {
                 const statusText = student.status.toLowerCase();
                 
-                // تحديد الحالات بدقة بناءً على عمود التقدير في الإكسيل
                 const isAbsent = statusText.includes('غائب') || statusText.includes('لم يحضر');
                 const isFail = statusText.includes('راسب') || statusText.includes('ضعيف');
                 const isPass = statusText.includes('ناجح') || statusText.includes('ممتاز') || statusText.includes('جيد') || statusText.includes('مقبول') || (!isFail && !isAbsent);
 
                 if (isAbsent) {
-                    // لم يحضر - تبقي الأباجورة مظلمة
-                    bodyEl.classList.remove('success-state', 'fail-state');
+                    // لم يحضر - لا تنور (تبقى مظلمة تماماً)
+                    bodyEl.classList.remove('success-state', 'fail-state', 'white-state');
                 } else if (isFail) {
                     // راسب - أباجورة حمراء
                     bodyEl.classList.add('fail-state');
@@ -398,8 +423,8 @@
                     </div>
                 `;
             } else {
-                // الكود غير موجود - تبقي الأباجورة مظلمة
-                bodyEl.classList.remove('success-state', 'fail-state');
+                // الكود غير موجود أو خطأ - لا تنور (مظلمة)
+                bodyEl.classList.remove('success-state', 'fail-state', 'white-state');
                 resultArea.innerHTML = `<div class="error-msg">عذراً، الكود الذي أدخلته غير صحيح أو غير موجود!</div>`;
             }
         }
