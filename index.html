@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تسجيل الدخول - نظام النتائج</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <style>
         :root {
             --bg-dark: #121417;
-            --bg-light: #1c1f24;
             --primary: #d4af37;
         }
         body {
@@ -23,20 +23,39 @@
             overflow-x: hidden;
             color: #fff;
         }
-        body.active {
-            background-color: var(--bg-light);
+
+        /* حالة النجاح - أخضر */
+        body.success-state {
+            background-color: #152219;
         }
-        body.active::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 100vw;
-            height: 100vh;
-            transform: translate(-50%, -50%);
-            background: radial-gradient(circle at 75% 50%, rgba(246, 211, 101, 0.08), transparent 50%);
-            pointer-events: none;
-            z-index: 0;
+        body.success-state .lamp-shade {
+            background: #eafaf1;
+            box-shadow: 0 -5px 25px rgba(46, 204, 113, 0.7);
+        }
+        body.success-state .light-beam {
+            opacity: 1;
+            background: linear-gradient(to bottom, rgba(46, 204, 113, 0.45) 0%, transparent 100%);
+        }
+        body.success-state .click-text {
+            color: #2ecc71;
+            text-shadow: 0 0 15px rgba(46, 204, 113, 0.6);
+        }
+
+        /* حالة الرسوب - أحمر */
+        body.fail-state {
+            background-color: #261414;
+        }
+        body.fail-state .lamp-shade {
+            background: #fdedec;
+            box-shadow: 0 -5px 25px rgba(231, 76, 60, 0.7);
+        }
+        body.fail-state .light-beam {
+            opacity: 1;
+            background: linear-gradient(to bottom, rgba(231, 76, 60, 0.45) 0%, transparent 100%);
+        }
+        body.fail-state .click-text {
+            color: #e74c3c;
+            text-shadow: 0 0 15px rgba(231, 76, 60, 0.6);
         }
         
         .wrapper {
@@ -67,10 +86,6 @@
             letter-spacing: 1px;
             transition: color 0.4s, text-shadow 0.4s;
         }
-        body.active .click-text {
-            color: #f6d365;
-            text-shadow: 0 0 15px rgba(246, 211, 101, 0.6);
-        }
         .lamp {
             position: relative;
             width: 140px;
@@ -86,11 +101,7 @@
             background: #e0e0e0;
             border-radius: 70px 70px 0 0;
             z-index: 2;
-            transition: background 0.3s, box-shadow 0.3s;
-        }
-        body.active .lamp-shade {
-            background: #fff9e6;
-            box-shadow: 0 -5px 25px rgba(255, 249, 230, 0.6);
+            transition: background 0.4s, box-shadow 0.4s;
         }
         .lamp-stand {
             position: absolute;
@@ -142,30 +153,18 @@
             left: -55px;
             width: 250px;
             height: 350px;
-            background: linear-gradient(to bottom, rgba(255, 249, 230, 0.4) 0%, transparent 100%);
+            background: transparent;
             clip-path: polygon(28% 0, 72% 0, 100% 100%, 0 100%);
             opacity: 0;
-            transition: opacity 0.6s ease;
+            transition: opacity 0.6s ease, background 0.6s ease;
             z-index: 1;
             pointer-events: none;
-        }
-        body.active .light-beam {
-            opacity: 1;
         }
 
         /* ----- قسم الفورم (الزجاجي) ----- */
         .form-section {
             flex: 1;
-            opacity: 0;
-            transform: translateY(30px) scale(0.95);
-            transition: opacity 0.6s ease, transform 0.6s ease;
-            pointer-events: none;
             max-width: 450px;
-        }
-        body.active .form-section {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            pointer-events: auto;
         }
         
         .glass-card {
@@ -269,8 +268,8 @@
 <body id="body">
     
     <div class="wrapper">
-        <div class="lamp-section" onclick="toggleLight()">
-            <div class="click-text">اضغط</div>
+        <div class="lamp-section" onclick="toggleManualLight()">
+            <div class="click-text" id="clickText">اضغط</div>
             <div class="lamp">
                 <div class="lamp-shade"></div>
                 <div class="light-beam"></div>
@@ -299,7 +298,6 @@
     <script>
         let studentsData = [];
 
-        // تحميل ملف الإكسيل وقراءته تلقائياً عند فتح الصفحة
         async function loadExcelData() {
             try {
                 let response = await fetch('درجات_الطلاب_مع_الأكواد.xlsx');
@@ -308,15 +306,12 @@
                 let firstSheet = workbook.SheetNames[0];
                 let jsonSheet = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
                 
-                // معالجة البيانات وتجهيزها للبحث بمرونة تامة
                 studentsData = jsonSheet.map(row => {
                     let newRow = {};
                     for (let key in row) {
-                        let cleanKey = key.trim();
-                        newRow[cleanKey] = row[key];
+                        newRow[key.trim()] = row[key];
                     }
                     
-                    // استخراج عمود الكود بذكاء
                     let codeKey = Object.keys(newRow).find(k => k.includes('كود') || k.toLowerCase().includes('code'));
                     let nameKey = Object.keys(newRow).find(k => k.includes('الطالب') || k.includes('الاسم'));
                     let gradeKey = Object.keys(newRow).find(k => k.includes('الصف'));
@@ -336,7 +331,7 @@
                         score: scoreVal,
                         total: totalVal,
                         percentage: percentageVal,
-                        status: statusKey ? newRow[statusKey] : ''
+                        status: statusKey ? String(newRow[statusKey]).trim() : ''
                     };
                 });
             } catch (err) {
@@ -344,32 +339,55 @@
             }
         }
 
-        // تشغيل التحميل عند فتح الصفحة
         loadExcelData();
 
-        // تشغيل وإغلاق الإضاءة
-        function toggleLight() {
-            document.getElementById('body').classList.toggle('active');
+        function toggleManualLight() {
+            const body = document.getElementById('body');
+            if (!body.classList.contains('success-state') && !body.classList.contains('fail-state')) {
+                body.classList.toggle('success-state');
+            } else {
+                body.classList.remove('success-state', 'fail-state');
+            }
         }
 
-        // دالة البحث
         function searchStudent(event) {
             event.preventDefault();
             const inputCode = document.getElementById('codeInput').value.trim().toUpperCase();
             const resultArea = document.getElementById('resultArea');
+            const bodyEl = document.getElementById('body');
             
-            document.getElementById('body').classList.add('active');
+            // إعادة ضبط الإضاءة قبل البحث الجديد
+            bodyEl.classList.remove('success-state', 'fail-state');
 
             if (studentsData.length === 0) {
-                resultArea.innerHTML = `<div class="error-msg">جاري تحميل البيانات أو الملف غير موجود... حاول مرة أخرى بعد قليل.</div>`;
+                resultArea.innerHTML = `<div class="error-msg">جاري تحميل البيانات... حاول مرة أخرى بعد قليل.</div>`;
                 return;
             }
 
             const student = studentsData.find(s => s.code === inputCode);
 
             if (student) {
-                const isPass = student.status.includes('ناجح');
-                const statusClass = isPass ? 'status-pass' : 'status-fail';
+                const statusText = student.status.toLowerCase();
+                
+                // تحديد الحالات بدقة بناءً على عمود التقدير في الإكسيل
+                const isAbsent = statusText.includes('غائب') || statusText.includes('لم يحضر');
+                const isFail = statusText.includes('راسب') || statusText.includes('ضعيف');
+                const isPass = statusText.includes('ناجح') || statusText.includes('ممتاز') || statusText.includes('جيد') || statusText.includes('مقبول') || (!isFail && !isAbsent);
+
+                if (isAbsent) {
+                    // لم يحضر - تبقي الأباجورة مظلمة
+                    bodyEl.classList.remove('success-state', 'fail-state');
+                } else if (isFail) {
+                    // راسب - أباجورة حمراء
+                    bodyEl.classList.add('fail-state');
+                } else if (isPass) {
+                    // ناجح - أباجورة خضراء + صواريخ احتفال
+                    bodyEl.classList.add('success-state');
+                    triggerFireworks();
+                }
+
+                const statusClass = isPass && !isFail ? 'status-pass' : 'status-fail';
+                
                 resultArea.innerHTML = `
                     <div class="result-container">
                         <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
@@ -380,8 +398,31 @@
                     </div>
                 `;
             } else {
-                resultArea.innerHTML = `<div class="error-msg">عذراً، الكود الذي أدخلته غير صحيح!</div>`;
+                // الكود غير موجود - تبقي الأباجورة مظلمة
+                bodyEl.classList.remove('success-state', 'fail-state');
+                resultArea.innerHTML = `<div class="error-msg">عذراً، الكود الذي أدخلته غير صحيح أو غير موجود!</div>`;
             }
+        }
+
+        // دالة إطلاق صواريخ الاحتفال
+        function triggerFireworks() {
+            var duration = 3 * 1000;
+            var animationEnd = Date.now() + duration;
+            var defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 999 };
+
+            function randomInRange(min, max) {
+                return Math.random() * (max - min) + min;
+            }
+
+            var interval = setInterval(function() {
+                var timeLeft = animationEnd - Date.now();
+                if (timeLeft <= 0) {
+                    return clearInterval(interval);
+                }
+                var particleCount = 50 * (timeLeft / duration);
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } }));
+                confetti(Object.assign({}, defaults, { particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } }));
+            }, 250);
         }
     </script>
 </body>
