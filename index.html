@@ -315,6 +315,9 @@
     <script>
         let studentsData = [];
 
+        // قائمة بجميع ملفات الإكسيل الموجودة على المستودع
+        const excelFiles = ['درجات_الطلاب_مع_الأكواد.xlsx', 'تمهيدي.xlsx'];
+
         // دالة التشفير SHA-256
         async function sha256Hex(str) {
             const encoder = new TextEncoder();
@@ -337,7 +340,7 @@
             return shortCode;
         }
 
-        // تنسيق النسب المئوية
+        // دالة ضبط وتنسيق النسب المئوية
         function formatPercent(val) {
             if (!val && val !== 0) return '0%';
             let strVal = String(val).replace(',', '.');
@@ -348,16 +351,28 @@
             return Math.round(num) + '%';
         }
 
-        // تحميل وتحليل ملف الإكسيل
+        // دالة قراءة ودمج البيانات من كل ملفات الإكسيل
         async function loadExcelData() {
             try {
-                let response = await fetch('درجات_الطلاب_مع_الأكواد.xlsx');
-                let data = await response.arrayBuffer();
-                let workbook = XLSX.read(data, {type: 'array'});
-                let firstSheet = workbook.SheetNames[0];
-                let jsonSheet = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
-                
-                studentsData = await Promise.all(jsonSheet.map(async (row) => {
+                let allJsonRows = [];
+
+                // المرور على كل ملف إكسيل في القائمة وقراءته
+                for (let fileName of excelFiles) {
+                    try {
+                        let response = await fetch(fileName);
+                        if (!response.ok) continue;
+                        let data = await response.arrayBuffer();
+                        let workbook = XLSX.read(data, {type: 'array'});
+                        let firstSheet = workbook.SheetNames[0];
+                        let jsonSheet = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+                        allJsonRows = allJsonRows.concat(jsonSheet);
+                    } catch (fileErr) {
+                        console.error(`خطأ أثناء تحميل الملف ${fileName}:`, fileErr);
+                    }
+                }
+
+                // معالجة كافة الصفوف وتحويل البيانات للشكل المطلوب
+                studentsData = await Promise.all(allJsonRows.map(async (row) => {
                     let newRow = {};
                     for (let key in row) {
                         newRow[key.trim()] = row[key];
@@ -379,10 +394,8 @@
                         finalCode = await generateShortCode(studentId, studentName);
                     }
 
-                    // التمييز هل الملف يحتوي على مادة عربي (نظام جديد) أم لا (نظام قديم)
                     let hasArabic = Object.keys(newRow).some(k => k.includes('العربي'));
 
-                    // قراءة الدرجات
                     let quranScore = newRow['درجة القرآن'] || newRow['درجة القران'] || '0';
                     let quranTotal = newRow['مجموع القران'] || newRow['مجموع القرآن'] || '0';
                     let quranPercent = formatPercent(newRow['نسبة القرآن'] || newRow['نسبة القران']);
@@ -397,14 +410,12 @@
                         code: finalCode,
                         name: studentName,
                         grade: gradeKey ? newRow[gradeKey] : 'غير محدد',
-                        isNewFormat: hasArabic, // علامة للتمييز بين الجديد والقديم
+                        isNewFormat: hasArabic,
                         
-                        // بيانات القرآن
                         quranScore: quranScore,
                         quranTotal: quranTotal,
                         quranPercent: quranPercent,
                         
-                        // بيانات العربي (إن وجدت)
                         arabicScore: arabicScore,
                         arabicTotal: arabicTotal,
                         arabicPercent: arabicPercent,
@@ -414,7 +425,7 @@
                     };
                 }));
             } catch (err) {
-                console.error("خطأ في تحميل ملف الإكسيل:", err);
+                console.error("خطأ عام أثناء تحميل البيانات:", err);
             }
         }
 
@@ -471,9 +482,8 @@
 
                 const statusClass = isPass ? 'status-pass' : 'status-fail';
                 
-                // --- هنا يتم تحديد شكل الخانات حسب كود الطالب (جديد أم قديم) ---
                 if (student.isNewFormat) {
-                    // 1. عرض الخانات الجديدة (لأكواد ملف الإكسيل الجديد)
+                    // عرض الخانات الجديدة (لأكواد الملف الجديد)
                     resultArea.innerHTML = `
                         <div class="result-container">
                             <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
@@ -486,7 +496,7 @@
                         </div>
                     `;
                 } else {
-                    // 2. عرض الخانات القديمة (لأكواد النظام القديم)
+                    // عرض الخانات القديمة (لأكواد الملف القديم)
                     resultArea.innerHTML = `
                         <div class="result-container">
                             <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
@@ -504,7 +514,7 @@
             }
         }
 
-        // دالة الألعاب النارية
+        // دالة الاحتفال بـ Confetti
         function triggerFireworks() {
             var duration = 3 * 1000;
             var animationEnd = Date.now() + duration;
