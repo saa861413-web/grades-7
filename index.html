@@ -24,7 +24,7 @@
             color: #fff;
         }
 
-        /* الحالة الافتراضية (خانة الكود فارغة) - إضاءة بيضاء */
+        /* الحالة الافتراضية - إضاءة بيضاء */
         body.white-state {
             background-color: #1c1f24;
         }
@@ -178,10 +178,10 @@
             pointer-events: none;
         }
 
-        /* ----- قسم الفورم (الزجاجي) ----- */
+        /* ----- قسم الفورم ----- */
         .form-section {
             flex: 1;
-            max-width: 450px;
+            max-width: 480px;
         }
         
         .glass-card {
@@ -190,19 +190,19 @@
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 20px;
-            padding: 40px;
+            padding: 35px;
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
             text-align: center;
         }
         .glass-card h2 {
             margin-top: 0;
-            margin-bottom: 30px;
+            margin-bottom: 25px;
             font-weight: 500;
             font-size: 26px;
             color: #fff;
         }
         .input-group {
-            margin-bottom: 25px;
+            margin-bottom: 20px;
             text-align: right;
         }
         .input-group label {
@@ -248,7 +248,7 @@
 
         /* ----- قسم النتائج ----- */
         .result-container {
-            margin-top: 30px;
+            margin-top: 25px;
             text-align: right;
             background: rgba(0, 0, 0, 0.4);
             padding: 20px;
@@ -258,7 +258,7 @@
         .result-row {
             display: flex;
             justify-content: space-between;
-            padding: 12px 0;
+            padding: 10px 0;
             border-bottom: 1px dashed rgba(255,255,255,0.1);
         }
         .result-row:last-child { border-bottom: none; }
@@ -315,6 +315,40 @@
     <script>
         let studentsData = [];
 
+        // دالة التشفير SHA-256
+        async function sha256Hex(str) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(str);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+        }
+
+        async function generateShortCode(studentId, studentName, length = 5) {
+            const rawString = `${String(studentId).trim()}_${String(studentName).trim()}`;
+            const hashHex = await sha256Hex(rawString);
+            const allowedChars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+            let codeInt = parseInt(hashHex.substring(0, 10), 16);
+            let shortCode = "";
+            for (let i = 0; i < length; i++) {
+                shortCode += allowedChars[codeInt % allowedChars.length];
+                codeInt = Math.floor(codeInt / allowedChars.length);
+            }
+            return shortCode;
+        }
+
+        // تنسيق النسب المئوية
+        function formatPercent(val) {
+            if (!val && val !== 0) return '0%';
+            let strVal = String(val).replace(',', '.');
+            if (strVal.includes('%')) return strVal;
+            let num = parseFloat(strVal);
+            if (isNaN(num)) return strVal;
+            if (num <= 1 && num > 0) num = num * 100;
+            return Math.round(num) + '%';
+        }
+
+        // تحميل وتحليل ملف الإكسيل
         async function loadExcelData() {
             try {
                 let response = await fetch('درجات_الطلاب_مع_الأكواد.xlsx');
@@ -323,34 +357,62 @@
                 let firstSheet = workbook.SheetNames[0];
                 let jsonSheet = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
                 
-                studentsData = jsonSheet.map(row => {
+                studentsData = await Promise.all(jsonSheet.map(async (row) => {
                     let newRow = {};
                     for (let key in row) {
                         newRow[key.trim()] = row[key];
                     }
                     
-                    let codeKey = Object.keys(newRow).find(k => k.includes('كود') || k.toLowerCase().includes('code'));
+                    let idKey = Object.keys(newRow).find(k => k === 'م' || k.toLowerCase().includes('id'));
                     let nameKey = Object.keys(newRow).find(k => k.includes('الطالب') || k.includes('الاسم'));
-                    let gradeKey = Object.keys(newRow).find(k => k.includes('الصف'));
-                    let statusKey = Object.keys(newRow).find(k => k.includes('التقدير'));
+                    let codeKey = Object.keys(newRow).find(k => k.includes('الكود المشفر') || k.includes('كود') || k.toLowerCase().includes('code'));
+                    let gradeKey = Object.keys(newRow).find(k => k.includes('السنة') || k.includes('الصف'));
+                    let statusKey = Object.keys(newRow).find(k => k.includes('التقدير') || k.includes('الحالة'));
                     
-                    let scoreVal = '0', totalVal = '0', percentageVal = '0%';
-                    for (let k in newRow) {
-                        if (k.includes('درجة')) scoreVal = newRow[k];
-                        if (k.includes('مجموع')) totalVal = newRow[k];
-                        if (k.includes('نسبة')) percentageVal = String(newRow[k]).includes('%') ? newRow[k] : newRow[k] + '%';
+                    let studentId = idKey ? newRow[idKey] : Object.values(newRow)[0];
+                    let studentName = nameKey ? newRow[nameKey] : 'غير محدد';
+                    
+                    let finalCode = '';
+                    if (codeKey && newRow[codeKey]) {
+                        finalCode = String(newRow[codeKey]).trim().toUpperCase();
+                    } else if (studentId && studentName) {
+                        finalCode = await generateShortCode(studentId, studentName);
                     }
 
+                    // التمييز هل الملف يحتوي على مادة عربي (نظام جديد) أم لا (نظام قديم)
+                    let hasArabic = Object.keys(newRow).some(k => k.includes('العربي'));
+
+                    // قراءة الدرجات
+                    let quranScore = newRow['درجة القرآن'] || newRow['درجة القران'] || '0';
+                    let quranTotal = newRow['مجموع القران'] || newRow['مجموع القرآن'] || '0';
+                    let quranPercent = formatPercent(newRow['نسبة القرآن'] || newRow['نسبة القران']);
+
+                    let arabicScore = newRow['درجة العربي'] || '0';
+                    let arabicTotal = newRow['مجموع العربي'] || '0';
+                    let arabicPercent = formatPercent(newRow['نسبة العربي']);
+
+                    let totalPercentage = formatPercent(newRow['النسبة المئوية'] || newRow['النسبة الكلية'] || newRow['النسبة']);
+
                     return {
-                        code: codeKey ? String(newRow[codeKey]).trim().toUpperCase() : '',
-                        name: nameKey ? newRow[nameKey] : 'غير محدد',
+                        code: finalCode,
+                        name: studentName,
                         grade: gradeKey ? newRow[gradeKey] : 'غير محدد',
-                        score: scoreVal,
-                        total: totalVal,
-                        percentage: percentageVal,
+                        isNewFormat: hasArabic, // علامة للتمييز بين الجديد والقديم
+                        
+                        // بيانات القرآن
+                        quranScore: quranScore,
+                        quranTotal: quranTotal,
+                        quranPercent: quranPercent,
+                        
+                        // بيانات العربي (إن وجدت)
+                        arabicScore: arabicScore,
+                        arabicTotal: arabicTotal,
+                        arabicPercent: arabicPercent,
+                        
+                        totalPercentage: totalPercentage,
                         status: statusKey ? String(newRow[statusKey]).trim() : ''
                     };
-                });
+                }));
             } catch (err) {
                 console.error("خطأ في تحميل ملف الإكسيل:", err);
             }
@@ -358,7 +420,6 @@
 
         loadExcelData();
 
-        // مراقبة خانة الكود: إذا أصبحت فارغة تعود الأباجورة للون الأبيض تلقائياً
         const codeInput = document.getElementById('codeInput');
         const bodyEl = document.getElementById('body');
 
@@ -381,7 +442,6 @@
             const inputCode = codeInput.value.trim().toUpperCase();
             const resultArea = document.getElementById('resultArea');
             
-            // إزالة كل الحالات القديمة
             bodyEl.classList.remove('success-state', 'fail-state', 'white-state');
 
             if (studentsData.length === 0) {
@@ -394,42 +454,57 @@
 
             if (student) {
                 const statusText = student.status.toLowerCase();
+                const scoresCombined = `${student.quranScore} ${student.arabicScore}`.toLowerCase();
                 
-                const isAbsent = statusText.includes('غائب') || statusText.includes('لم يحضر');
+                const isAbsent = statusText.includes('غائب') || statusText.includes('لم يحضر') || scoresCombined.includes('لم تدخل');
                 const isFail = statusText.includes('راسب') || statusText.includes('ضعيف');
-                const isPass = statusText.includes('ناجح') || statusText.includes('ممتاز') || statusText.includes('جيد') || statusText.includes('مقبول') || (!isFail && !isAbsent);
+                const isPass = !isFail && !isAbsent;
 
                 if (isAbsent) {
-                    // لم يحضر - لا تنور (تبقى مظلمة تماماً)
                     bodyEl.classList.remove('success-state', 'fail-state', 'white-state');
                 } else if (isFail) {
-                    // راسب - أباجورة حمراء
                     bodyEl.classList.add('fail-state');
                 } else if (isPass) {
-                    // ناجح - أباجورة خضراء + صواريخ احتفال
                     bodyEl.classList.add('success-state');
                     triggerFireworks();
                 }
 
-                const statusClass = isPass && !isFail ? 'status-pass' : 'status-fail';
+                const statusClass = isPass ? 'status-pass' : 'status-fail';
                 
-                resultArea.innerHTML = `
-                    <div class="result-container">
-                        <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
-                        <div class="result-row"><span class="label">الصف:</span> <span class="value">${student.grade}</span></div>
-                        <div class="result-row"><span class="label">درجة القرآن:</span> <span class="value">${student.score} / ${student.total}</span></div>
-                        <div class="result-row"><span class="label">النسبة المئوية:</span> <span class="value">${student.percentage}</span></div>
-                        ${student.status ? `<div class="result-row"><span class="label">التقدير:</span> <span class="value ${statusClass}">${student.status}</span></div>` : ''}
-                    </div>
-                `;
+                // --- هنا يتم تحديد شكل الخانات حسب كود الطالب (جديد أم قديم) ---
+                if (student.isNewFormat) {
+                    // 1. عرض الخانات الجديدة (لأكواد ملف الإكسيل الجديد)
+                    resultArea.innerHTML = `
+                        <div class="result-container">
+                            <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
+                            <div class="result-row"><span class="label">السنة:</span> <span class="value">${student.grade}</span></div>
+                            <div class="result-row"><span class="label">درجة القرآن:</span> <span class="value">${student.quranScore} / ${student.quranTotal}</span></div>
+                            <div class="result-row"><span class="label">نسبة القرآن:</span> <span class="value">${student.quranPercent}</span></div>
+                            <div class="result-row"><span class="label">درجة العربي:</span> <span class="value">${student.arabicScore} / ${student.arabicTotal}</span></div>
+                            <div class="result-row"><span class="label">نسبة العربي:</span> <span class="value">${student.arabicPercent}</span></div>
+                            ${student.status ? `<div class="result-row"><span class="label">التقدير العام:</span> <span class="value ${statusClass}">${student.status}</span></div>` : ''}
+                        </div>
+                    `;
+                } else {
+                    // 2. عرض الخانات القديمة (لأكواد النظام القديم)
+                    resultArea.innerHTML = `
+                        <div class="result-container">
+                            <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
+                            <div class="result-row"><span class="label">الصف:</span> <span class="value">${student.grade}</span></div>
+                            <div class="result-row"><span class="label">درجة القرآن:</span> <span class="value">${student.quranScore} / ${student.quranTotal}</span></div>
+                            <div class="result-row"><span class="label">النسبة المئوية:</span> <span class="value">${student.quranPercent}</span></div>
+                            ${student.status ? `<div class="result-row"><span class="label">التقدير:</span> <span class="value ${statusClass}">${student.status}</span></div>` : ''}
+                        </div>
+                    `;
+                }
+
             } else {
-                // الكود غير موجود أو خطأ - لا تنور (مظلمة)
                 bodyEl.classList.remove('success-state', 'fail-state', 'white-state');
                 resultArea.innerHTML = `<div class="error-msg">عذراً، الكود الذي أدخلته غير صحيح أو غير موجود!</div>`;
             }
         }
 
-        // دالة إطلاق صواريخ الاحتفال
+        // دالة الألعاب النارية
         function triggerFireworks() {
             var duration = 3 * 1000;
             var animationEnd = Date.now() + duration;
