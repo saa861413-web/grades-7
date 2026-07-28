@@ -315,35 +315,25 @@
     <script>
         let studentsData = [];
 
-        // قائمة بجميع ملفات الإكسيل الموجودة على المستودع
+        // قائمة بجميع ملفات الإكسيل المرفوعة
         const excelFiles = ['درجات_الطلاب_مع_الأكواد.xlsx', 'تمهيدي.xlsx'];
 
-        // دالة التشفير SHA-256
-        async function sha256Hex(str) {
-            const encoder = new TextEncoder();
-            const data = encoder.encode(str);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-        }
-
-        async function generateShortCode(studentId, studentName, length = 5) {
-            const rawString = `${String(studentId).trim()}_${String(studentName).trim()}`;
-            const hashHex = await sha256Hex(rawString);
-            const allowedChars = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-            let codeInt = parseInt(hashHex.substring(0, 10), 16);
-            let shortCode = "";
-            for (let i = 0; i < length; i++) {
-                shortCode += allowedChars[codeInt % allowedChars.length];
-                codeInt = Math.floor(codeInt / allowedChars.length);
+        // دالة مساعدة للبحث الذكي عن القيم في الصفوف
+        function getRowValue(row, ...keywords) {
+            const keys = Object.keys(row);
+            for (let kw of keywords) {
+                const foundKey = keys.find(k => k.trim().replace(/آ|أ|إ/g, 'ا').includes(kw.replace(/آ|أ|إ/g, 'ا')));
+                if (foundKey !== undefined && row[foundKey] !== undefined && row[foundKey] !== '') {
+                    return String(row[foundKey]).trim();
+                }
             }
-            return shortCode;
+            return '';
         }
 
-        // دالة ضبط وتنسيق النسب المئوية
+        // تنسيق النسب المئوية
         function formatPercent(val) {
             if (!val && val !== 0) return '0%';
-            let strVal = String(val).replace(',', '.');
+            let strVal = String(val).replace(',', '.').trim();
             if (strVal.includes('%')) return strVal;
             let num = parseFloat(strVal);
             if (isNaN(num)) return strVal;
@@ -351,15 +341,24 @@
             return Math.round(num) + '%';
         }
 
-        // دالة قراءة ودمج البيانات من كل ملفات الإكسيل
+        // تنسيق عرض الدرجة لتجاوز كلمة "لم تدخل"
+        function formatScoreDisplay(score, total) {
+            if (!score && score !== '0') return 'غير محدد';
+            let strScore = String(score).trim();
+            if (strScore.includes('لم') || strScore.includes('غائب') || isNaN(Number(strScore.replace(',', '.')))) {
+                return strScore;
+            }
+            return total ? `${strScore} / ${total}` : strScore;
+        }
+
+        // دالة تحميل وقراءة كلاً من ملفات الإكسيل
         async function loadExcelData() {
             try {
                 let allJsonRows = [];
 
-                // المرور على كل ملف إكسيل في القائمة وقراءته
                 for (let fileName of excelFiles) {
                     try {
-                        let response = await fetch(fileName);
+                        let response = await fetch(encodeURI(fileName));
                         if (!response.ok) continue;
                         let data = await response.arrayBuffer();
                         let workbook = XLSX.read(data, {type: 'array'});
@@ -367,63 +366,53 @@
                         let jsonSheet = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
                         allJsonRows = allJsonRows.concat(jsonSheet);
                     } catch (fileErr) {
-                        console.error(`خطأ أثناء تحميل الملف ${fileName}:`, fileErr);
+                        console.error(`خطأ أثناء قراءة الملف ${fileName}:`, fileErr);
                     }
                 }
 
-                // معالجة كافة الصفوف وتحويل البيانات للشكل المطلوب
-                studentsData = await Promise.all(allJsonRows.map(async (row) => {
-                    let newRow = {};
-                    for (let key in row) {
-                        newRow[key.trim()] = row[key];
-                    }
-                    
-                    let idKey = Object.keys(newRow).find(k => k === 'م' || k.toLowerCase().includes('id'));
-                    let nameKey = Object.keys(newRow).find(k => k.includes('الطالب') || k.includes('الاسم'));
-                    let codeKey = Object.keys(newRow).find(k => k.includes('الكود المشفر') || k.includes('كود') || k.toLowerCase().includes('code'));
-                    let gradeKey = Object.keys(newRow).find(k => k.includes('السنة') || k.includes('الصف'));
-                    let statusKey = Object.keys(newRow).find(k => k.includes('التقدير') || k.includes('الحالة'));
-                    
-                    let studentId = idKey ? newRow[idKey] : Object.values(newRow)[0];
-                    let studentName = nameKey ? newRow[nameKey] : 'غير محدد';
-                    
-                    let finalCode = '';
-                    if (codeKey && newRow[codeKey]) {
-                        finalCode = String(newRow[codeKey]).trim().toUpperCase();
-                    } else if (studentId && studentName) {
-                        finalCode = await generateShortCode(studentId, studentName);
+                // استخراج وعصر البيانات الذكي
+                studentsData = allJsonRows.map(row => {
+                    // تنظيف المفاتيح داخل الصف
+                    let cleanRow = {};
+                    for (let k in row) {
+                        cleanRow[k.trim()] = row[k];
                     }
 
-                    let hasArabic = Object.keys(newRow).some(k => k.includes('العربي'));
+                    let rawCode = getRowValue(cleanRow, 'الكود المشفر', 'كود', 'code');
+                    let studentName = getRowValue(cleanRow, 'الطالب', 'الاسم', 'اسم');
+                    let gradeYear = getRowValue(cleanRow, 'السنة', 'الصف');
+                    
+                    let quranScore = getRowValue(cleanRow, 'درجة القرآن', 'درجة القران');
+                    let quranTotal = getRowValue(cleanRow, 'مجموع القرآن', 'مجموع القران');
+                    let quranPercent = formatPercent(getRowValue(cleanRow, 'نسبة القرآن', 'نسبة القران'));
 
-                    let quranScore = newRow['درجة القرآن'] || newRow['درجة القران'] || '0';
-                    let quranTotal = newRow['مجموع القران'] || newRow['مجموع القرآن'] || '0';
-                    let quranPercent = formatPercent(newRow['نسبة القرآن'] || newRow['نسبة القران']);
+                    let arabicScore = getRowValue(cleanRow, 'درجة العربي');
+                    let arabicTotal = getRowValue(cleanRow, 'مجموع العربي');
+                    let arabicPercent = formatPercent(getRowValue(cleanRow, 'نسبة العربي'));
 
-                    let arabicScore = newRow['درجة العربي'] || '0';
-                    let arabicTotal = newRow['مجموع العربي'] || '0';
-                    let arabicPercent = formatPercent(newRow['نسبة العربي']);
+                    let statusVal = getRowValue(cleanRow, 'التقدير', 'الحالة');
 
-                    let totalPercentage = formatPercent(newRow['النسبة المئوية'] || newRow['النسبة الكلية'] || newRow['النسبة']);
+                    let hasArabic = Boolean(arabicScore || arabicTotal || getRowValue(cleanRow, 'نسبة العربي'));
 
                     return {
-                        code: finalCode,
-                        name: studentName,
-                        grade: gradeKey ? newRow[gradeKey] : 'غير محدد',
+                        code: rawCode.toUpperCase().replace(/\s+/g, ''),
+                        name: studentName || 'غير محدد',
+                        grade: gradeYear || 'غير محدد',
                         isNewFormat: hasArabic,
                         
-                        quranScore: quranScore,
-                        quranTotal: quranTotal,
+                        quranScore: quranScore || '0',
+                        quranTotal: quranTotal || '0',
                         quranPercent: quranPercent,
                         
-                        arabicScore: arabicScore,
-                        arabicTotal: arabicTotal,
+                        arabicScore: arabicScore || '0',
+                        arabicTotal: arabicTotal || '0',
                         arabicPercent: arabicPercent,
                         
-                        totalPercentage: totalPercentage,
-                        status: statusKey ? String(newRow[statusKey]).trim() : ''
+                        status: statusVal
                     };
-                }));
+                });
+                
+                console.log("تم تحميل عدد طلاب:", studentsData.length);
             } catch (err) {
                 console.error("خطأ عام أثناء تحميل البيانات:", err);
             }
@@ -450,13 +439,13 @@
 
         function searchStudent(event) {
             event.preventDefault();
-            const inputCode = codeInput.value.trim().toUpperCase();
+            const inputCode = codeInput.value.trim().toUpperCase().replace(/\s+/g, '');
             const resultArea = document.getElementById('resultArea');
             
             bodyEl.classList.remove('success-state', 'fail-state', 'white-state');
 
             if (studentsData.length === 0) {
-                resultArea.innerHTML = `<div class="error-msg">جاري تحميل البيانات... حاول مرة أخرى بعد قليل.</div>`;
+                resultArea.innerHTML = `<div class="error-msg">جاري تحميل البيانات... حاول مرة أخرى خلال ثوانٍ.</div>`;
                 bodyEl.classList.add('white-state');
                 return;
             }
@@ -483,25 +472,25 @@
                 const statusClass = isPass ? 'status-pass' : 'status-fail';
                 
                 if (student.isNewFormat) {
-                    // عرض الخانات الجديدة (لأكواد الملف الجديد)
+                    // عرض بيانات ملف التمهيدي (قرآن + عربي)
                     resultArea.innerHTML = `
                         <div class="result-container">
                             <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
                             <div class="result-row"><span class="label">السنة:</span> <span class="value">${student.grade}</span></div>
-                            <div class="result-row"><span class="label">درجة القرآن:</span> <span class="value">${student.quranScore} / ${student.quranTotal}</span></div>
+                            <div class="result-row"><span class="label">درجة القرآن:</span> <span class="value">${formatScoreDisplay(student.quranScore, student.quranTotal)}</span></div>
                             <div class="result-row"><span class="label">نسبة القرآن:</span> <span class="value">${student.quranPercent}</span></div>
-                            <div class="result-row"><span class="label">درجة العربي:</span> <span class="value">${student.arabicScore} / ${student.arabicTotal}</span></div>
+                            <div class="result-row"><span class="label">درجة العربي:</span> <span class="value">${formatScoreDisplay(student.arabicScore, student.arabicTotal)}</span></div>
                             <div class="result-row"><span class="label">نسبة العربي:</span> <span class="value">${student.arabicPercent}</span></div>
                             ${student.status ? `<div class="result-row"><span class="label">التقدير العام:</span> <span class="value ${statusClass}">${student.status}</span></div>` : ''}
                         </div>
                     `;
                 } else {
-                    // عرض الخانات القديمة (لأكواد الملف القديم)
+                    // عرض بيانات الملف القديم (قرآن فقط)
                     resultArea.innerHTML = `
                         <div class="result-container">
                             <div class="result-row"><span class="label">اسم الطالب:</span> <span class="value">${student.name}</span></div>
                             <div class="result-row"><span class="label">الصف:</span> <span class="value">${student.grade}</span></div>
-                            <div class="result-row"><span class="label">درجة القرآن:</span> <span class="value">${student.quranScore} / ${student.quranTotal}</span></div>
+                            <div class="result-row"><span class="label">درجة القرآن:</span> <span class="value">${formatScoreDisplay(student.quranScore, student.quranTotal)}</span></div>
                             <div class="result-row"><span class="label">النسبة المئوية:</span> <span class="value">${student.quranPercent}</span></div>
                             ${student.status ? `<div class="result-row"><span class="label">التقدير:</span> <span class="value ${statusClass}">${student.status}</span></div>` : ''}
                         </div>
@@ -514,7 +503,7 @@
             }
         }
 
-        // دالة الاحتفال بـ Confetti
+        // الاحتفال بالـ Confetti عند النجاح
         function triggerFireworks() {
             var duration = 3 * 1000;
             var animationEnd = Date.now() + duration;
